@@ -1,11 +1,9 @@
-from typing import Union
-
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from torch.nn.utils import weight_norm
+
 
 class FactorizedVectorQuantize(nn.Module):
     def __init__(self, dim, codebook_size, codebook_dim, commitment, **kwargs):
@@ -13,7 +11,7 @@ class FactorizedVectorQuantize(nn.Module):
         self.codebook_size = codebook_size
         self.codebook_dim = codebook_dim
         self.commitment = commitment
-        
+
         if dim != self.codebook_dim:
             self.in_proj = weight_norm(nn.Linear(dim, self.codebook_dim))
             self.out_proj = weight_norm(nn.Linear(self.codebook_dim, dim))
@@ -21,7 +19,7 @@ class FactorizedVectorQuantize(nn.Module):
             self.in_proj = nn.Identity()
             self.out_proj = nn.Identity()
         self._codebook = nn.Embedding(codebook_size, self.codebook_dim)
-    
+
     @property
     def codebook(self):
         return self._codebook
@@ -56,14 +54,16 @@ class FactorizedVectorQuantize(nn.Module):
         z_e = self.in_proj(z)  # z_e : (B x T x D)
         z_e = rearrange(z_e, "b t d -> b d t")
         z_q, indices = self.decode_latents(z_e)
-        
 
         if self.training:
-            commitment_loss = F.mse_loss(z_e, z_q.detach(), reduction='none').mean([1, 2]) * self.commitment
-            codebook_loss = F.mse_loss(z_q, z_e.detach(), reduction='none').mean([1, 2])
+            commitment_loss = (
+                F.mse_loss(z_e, z_q.detach(), reduction="none").mean([1, 2])
+                * self.commitment
+            )
+            codebook_loss = F.mse_loss(z_q, z_e.detach(), reduction="none").mean([1, 2])
             commit_loss = commitment_loss + codebook_loss
         else:
-            commit_loss = torch.zeros(z.shape[0], device = z.device)
+            commit_loss = torch.zeros(z.shape[0], device=z.device)
 
         z_q = (
             z_e + (z_q - z_e).detach()

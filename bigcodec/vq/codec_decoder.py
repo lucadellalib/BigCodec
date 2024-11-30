@@ -1,39 +1,41 @@
 import numpy as np
-import torch
-import torch.nn as nn
-from .residual_vq import ResidualVQ
-from .module import WNConv1d, DecoderBlock, ResLSTM
-from .alias_free_torch import *
-from . import activations
+
+from bigcodec.vq import activations
+from bigcodec.vq.alias_free_torch import *
+from bigcodec.vq.module import DecoderBlock, ResLSTM, WNConv1d
+from bigcodec.vq.residual_vq import ResidualVQ
+
 
 def init_weights(m):
     if isinstance(m, nn.Conv1d):
         nn.init.trunc_normal_(m.weight, std=0.02)
         nn.init.constant_(m.bias, 0)
 
+
 class CodecDecoder(nn.Module):
-    def __init__(self,
-                 in_channels=1024,
-                 upsample_initial_channel=1536,
-                 ngf=48,
-                 use_rnn=True,
-                 rnn_bidirectional=False,
-                 rnn_num_layers=2,
-                 up_ratios=(5, 5, 2, 2, 2),
-                 dilations=(1, 3, 9),
-                 vq_num_quantizers=1,
-                 vq_dim=1024,
-                 vq_commit_weight=0.25,
-                 vq_weight_init=False,
-                 vq_full_commit_loss=False,
-                 codebook_size=8192,
-                 codebook_dim=8,
-                ):
+    def __init__(
+        self,
+        in_channels=1024,
+        upsample_initial_channel=1536,
+        ngf=48,
+        use_rnn=True,
+        rnn_bidirectional=False,
+        rnn_num_layers=2,
+        up_ratios=(5, 5, 2, 2, 2),
+        dilations=(1, 3, 9),
+        vq_num_quantizers=1,
+        vq_dim=1024,
+        vq_commit_weight=0.25,
+        vq_weight_init=False,
+        vq_full_commit_loss=False,
+        codebook_size=8192,
+        codebook_dim=8,
+    ):
         super().__init__()
         self.hop_length = np.prod(up_ratios)
         self.ngf = ngf
         self.up_ratios = up_ratios
-        
+
         self.quantizer = ResidualVQ(
             num_quantizers=vq_num_quantizers,
             dim=vq_dim,
@@ -46,28 +48,29 @@ class CodecDecoder(nn.Module):
         )
         channels = upsample_initial_channel
         layers = [WNConv1d(in_channels, channels, kernel_size=7, padding=3)]
-        
+
         if use_rnn:
             layers += [
-                ResLSTM(channels,
-                        num_layers=rnn_num_layers,
-                        bidirectional=rnn_bidirectional
-                    )
+                ResLSTM(
+                    channels, num_layers=rnn_num_layers, bidirectional=rnn_bidirectional
+                )
             ]
-        
+
         for i, stride in enumerate(up_ratios):
             input_dim = channels // 2**i
             output_dim = channels // 2 ** (i + 1)
             layers += [DecoderBlock(input_dim, output_dim, stride, dilations)]
 
         layers += [
-            Activation1d(activation=activations.SnakeBeta(output_dim, alpha_logscale=True)),
+            Activation1d(
+                activation=activations.SnakeBeta(output_dim, alpha_logscale=True)
+            ),
             WNConv1d(output_dim, 1, kernel_size=7, padding=3),
             nn.Tanh(),
         ]
 
         self.model = nn.Sequential(*layers)
-        
+
         self.reset_parameters()
 
     def forward(self, x, vq=True):
@@ -88,7 +91,7 @@ class CodecDecoder(nn.Module):
         return embs
 
     def inference_vq(self, vq):
-        x = vq[None,:,:]
+        x = vq[None, :, :]
         x = self.model(x)
         return x
 
@@ -96,11 +99,10 @@ class CodecDecoder(nn.Module):
         x, q, loss, perp = self.quantizer(x)
         x = self.model(x)
         return x, None
-    
+
     def inference(self, x):
         x = self.model(x)
         return x, None
-
 
     def remove_weight_norm(self):
         """Remove weight normalization module from all of the layers."""

@@ -1,24 +1,27 @@
-import torch
-from torch import nn
 import numpy as np
-from .module import WNConv1d, EncoderBlock, ResLSTM
-from .alias_free_torch import *
-from . import activations
+
+from bigcodec.vq import activations
+from bigcodec.vq.alias_free_torch import *
+from bigcodec.vq.module import EncoderBlock, ResLSTM, WNConv1d
+
 
 def init_weights(m):
     if isinstance(m, nn.Conv1d):
         nn.init.trunc_normal_(m.weight, std=0.02)
         nn.init.constant_(m.bias, 0)
 
+
 class CodecEncoder(nn.Module):
-    def __init__(self,
-                ngf=48,
-                use_rnn=True,
-                rnn_bidirectional=False,
-                rnn_num_layers=2,
-                up_ratios=(2, 2, 2, 5, 5),
-                dilations=(1, 3, 9),
-                out_channels=1024):
+    def __init__(
+        self,
+        ngf=48,
+        use_rnn=True,
+        rnn_bidirectional=False,
+        rnn_num_layers=2,
+        up_ratios=(2, 2, 2, 5, 5),
+        dilations=(1, 3, 9),
+        out_channels=1024,
+    ):
         super().__init__()
         self.hop_length = np.prod(up_ratios)
         self.ngf = ngf
@@ -35,21 +38,22 @@ class CodecEncoder(nn.Module):
         # RNN
         if use_rnn:
             self.block += [
-                ResLSTM(d_model,
-                        num_layers=rnn_num_layers,
-                        bidirectional=rnn_bidirectional
-                    )
+                ResLSTM(
+                    d_model, num_layers=rnn_num_layers, bidirectional=rnn_bidirectional
+                )
             ]
         # Create last convolution
         self.block += [
-            Activation1d(activation=activations.SnakeBeta(d_model, alpha_logscale=True)),
+            Activation1d(
+                activation=activations.SnakeBeta(d_model, alpha_logscale=True)
+            ),
             WNConv1d(d_model, out_channels, kernel_size=3, padding=1),
         ]
 
         # Wrap black into nn.Sequential
         self.block = nn.Sequential(*self.block)
         self.enc_dim = d_model
-        
+
         self.reset_parameters()
 
     def forward(self, x):
